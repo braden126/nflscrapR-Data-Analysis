@@ -1,0 +1,249 @@
+---
+title: "Seahawks Offense Analysis"
+author: "Braden Baker"
+date: "5/4/2019"
+output: github_document
+---
+
+The Seahawks passing game in the 2018 NFL season appeared to be very effective based on TV broadcasts. This project looks at how the Seahawks passed, what passing was effective, and how the wide recievers performed.This is a very large NFL dataset that is already mostly cleaned. It contains variables of offensive, defensive, and specical teams plays. The data is mostly made up of integers and character data types. 
+```{r}
+library(tidyverse)
+library(openintro)
+
+load(file="sea1.Rdata")
+
+
+str(sea1)
+```
+
+## Cleaning and Preparation
+
+This dataset contains many variables, and we are only intereasted in ones relating to passing. Using dplyr tools the data is trimmed down from 256 variables to 118 variables.
+
+This dataset contains data for every play the seahawks had on offense, defense, and special teams, to select only the data related to Russell Wilson, the dataset is filtered to select data where the passer player name column is equal to R. Wilson. Along with removing plays that happened when the win probability was very low or high that happened in, “garbage time.” This is done to make the data a better representation of the true passing game throughout the season.
+
+This data is already fairly clean but, the quarter value is stored as an integer but is really a factor. I also cut the air yard column and the yard line column into groups to be used later.
+
+I will mainly be using expected points per attempt to judge effectiveness, which is stored as "epa" in this dataset.
+```{r}
+wilson <- sea1 %>% 
+  filter(passer_player_name == "R.Wilson" & wp > 0.1 & wp < 0.9) %>%
+  select(-(punt_returner_player_id:defensive_extra_point_conv), -contains('td_team'), -contains('timeout'), -contains('interception_player'), -contains('fumble'),-contains('result'), -contains('run'), -contains('rush'), -contains('punt'), -contains('tackle'), -contains('kick'), -contains('rusher'), -contains('lateral'))
+
+wilson$qtr <- as.factor(wilson$qtr)
+wilson$airyardgroup <- cut(x = wilson$air_yards, breaks = c(-15,-5,0,10,20,30,40,60))
+wilson$yardlinegroup <- cut(x = wilson$yardline_100, breaks = c(100,80,60,40,20,0))
+
+str(wilson)
+```
+
+##Passing by Quarters
+
+Wilson tends to throw about the same depth for the first three quarters, but during the fourth quarter his average depth of target takes a large increase. I removed the fifth  quarter because it only has a sample size of one.
+
+Wilson starts both the first and second half weak but as games went on Wilson steadily improved. He starts off the first quarter weak but improves throughout the quarter and maintains his improvement during the second quarter. The start of the third quarter is where he is weakest but quickly improves as the quarter goes on and carries that momentum into the fourth quarter. 
+```{r}
+wilsonpasslengths <- wilson %>%
+  group_by(qtr) %>%
+  filter(sack == 0 & qtr != 5 & qb_spike==0) %>%
+  summarize(avgairyards=mean(air_yards))
+
+ggplot(wilsonpasslengths, aes(x=qtr, y=avgairyards))+ geom_point()
+
+ggplot(wilson, aes(x=game_seconds_remaining, y=epa)) +
+  geom_point() + 
+  geom_smooth(method=lm, aes(fill=qtr))+scale_y_continuous(limits = c(-2, 2))
+```
+
+
+## Pass Location
+
+Looking at the location of pass attempts, as Wilson threw further down the field, his expected points per play increase. It as noticable that the Seahawks did not have success with passes behind the line of scrimmage, which are mostly screen plays, during the season.
+
+```{r}
+ggplot(wilson, aes(x=air_yards, y=epa))+ geom_jitter(alpha=0.7)+ geom_smooth()
+
+```
+
+Wilson was far more effective throwing to the middle of the field, while being throwing to the left and right side of the field with about equal effectiveness. However, he throws to the middle of the field the least amount. This high epa does not appear to be from throwing the ball deep down the field as a majority of Wilson's attempts were between -5 and 10 yards when throwing to the middle of the field. 
+```{r}
+wilsonpasslocationEPAsavg <- wilson %>%
+  group_by(pass_location) %>%
+  filter(!is.na(pass_location)) %>%
+  summarize(AvgEpa=mean(epa))
+
+passlocat <- wilson %>%
+  group_by(pass_location) %>%
+  filter(!is.na(pass_location))
+
+ggplot(wilsonpasslocationEPAsavg, aes(x=pass_location, y=AvgEpa))+ geom_point()+geom_text(aes(label=AvgEpa),hjust=0.1, vjust=-0.5)+scale_y_continuous(limits = c(0, 1))
+
+ggplot(passlocat, aes(x=pass_location))+geom_bar(aes(fill=airyardgroup))
+
+```
+
+## Completion Percentage
+
+This code calculates the completion percentage for each air yard groups.
+
+```{r}
+completetionpercent1 <- wilson %>%
+  filter(airyardgroup =="(-15,-5]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+completetionpercent2 <- wilson %>%
+  filter(airyardgroup =="(-5,0]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+completetionpercent3 <- wilson %>%
+  filter(airyardgroup =="(0,10]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+completetionpercent4 <- wilson %>%
+  filter(airyardgroup =="(10,20]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+completetionpercent5 <- wilson %>%
+  filter(airyardgroup =="(20,30]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+completetionpercent6 <- wilson %>%
+  filter(airyardgroup =="(30,40]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+completetionpercent7 <- wilson %>%
+  filter(airyardgroup =="(40,60]") %>%
+  mutate(completionpct = sum(complete_pass)/nrow(.))
+
+
+allcompletionperct <- rbind(completetionpercent1, completetionpercent2, completetionpercent3, completetionpercent4, completetionpercent5, completetionpercent6, completetionpercent7)
+
+allcompletionperctshow <- allcompletionperct %>%
+  distinct(airyardgroup, completionpct)
+
+allcompletionperctshow
+```
+
+I filtered out sacks and spikes to remove na values in the geom_bar.
+
+The -15, -5 group has a low epa average and low sum epa but a high completion percentage, this makes sense because passes completed that far behind the line of scrimmage are usually done when something goes wrong and a desperate pass is needed to anyone that's open.
+The 0-10 group has by far the most passes but a sum epa similar to the other higher groups that had many less targets except the 10-20 group. Wilson only had a 36% completion rate in the 20-30 group but that group still had a higher sum epa than 0-10 group despite having a 72% completion rate. Which shows how much more effective a higher depth of target is. 
+It’s also interesting that the -5, 0 had a slightly lower average epa and a slightly higher completion percentage than the 0, 10 group, but 0, 10 had many more targets. This shows that the -5, 0 group could be an area to pass more in instead of 0, 10 because throwing shorter is usually safer and there is little passing efficiency lost. 
+Wilson also completed an extremely high 80% of his targets in the 40-60 group and 50% of his targets in the 30-40 group. These two groups had very little targets but were a large chunk of the total epa earned from passing this season. 
+```{r}
+wilsonairyardnosackspike <- wilson %>%
+  filter(sack == 0 & qb_spike==0) 
+
+ggplot(wilsonairyardnosackspike, aes(x=airyardgroup))+geom_bar() + labs(x="Air Yard Group")
+
+compsum <- allcompletionperct %>% 
+  group_by(airyardgroup, completionpct) %>%
+  summarize(epasum = sum(epa))
+
+ggplot(compsum, aes(x=airyardgroup, y=epasum, col=completionpct))+geom_point() + geom_text(aes(label=round(completionpct, 2)),hjust=0.1, vjust=-0.5) + labs(y="Sum EPA", x="Air Yard Group")
+
+compavg <- allcompletionperct %>% 
+  group_by(airyardgroup, completionpct) %>%
+  summarize(epaavg = mean(epa))
+
+ggplot(compavg, aes(x=airyardgroup, y=epaavg, col=completionpct))+geom_point() + geom_text(aes(label=round(completionpct, 2)),hjust=0.1, vjust=-0.5) + labs(y="Average EPA", x="Air Yard Group")
+```
+
+## Yard Line Location
+
+Looking at only touchdown passes, there seems to be a couple of good spots for Wilson, between goal and 8 yardline, 10 amd 22 yardline, and the 45 and 55 yardline. As plays happen that are closer to the goal their average epa steadily increases.
+```{r}
+tdloc <- wilson %>%
+  filter(pass_touchdown=="1")
+
+ggplot(tdloc, aes(x=yardline_100))+geom_density(adjust =0.2, aes(fill=pass_touchdown))
+
+yardlineepa <- wilson %>%
+  group_by(yardlinegroup) %>%
+  summarize(avgepa = mean(epa))
+
+ggplot(yardlineepa, aes(x=yardlinegroup, y=avgepa))+geom_point() + labs(y="Average Epa", x="Yard Line Group")
+
+```
+
+## Downs
+
+I removed fourth down here because it had a small sample size of only 3.
+On downs, Wilson threw slightly farther on first down than second down. This is likely because on first down you can take a risk since you still have two downs if the throw is unsuccesful. On second down, you have less margin for air and usally want to take a safer throw. On third down however, there is a large jump of a couple yards, which shows that Wilson was willing to take risks on third down. The average epa went up on each down, the highest epa on third down is likely due to his much increased average air yards on that down. The increase from first to second down isn't as clear, I suspect it may be from it being easier to get a first down pass from the yards gained on the previous down. 
+```{r}
+wilsonpasslengthsdown <- wilson %>%
+  group_by(down) %>%
+  filter(sack == 0 & qb_spike==0 & down != 4) %>%
+  summarize(avgairyards=mean(air_yards), avgyardstogo=mean(ydstogo))
+
+ggplot(wilsonpasslengthsdown, aes(x=down, group=2))+ geom_line(aes(y = avgairyards, colour = "green")) +geom_line(aes(y = avgyardstogo, colour = "blue"))+ labs(y="Yards", x="Down") + scale_color_manual(name = "Legend", labels = c("Average Yards to go", "Average Air Yards"), values = c("green", "blue")) 
+
+wilsonpassepadown <- wilson %>%
+  group_by(down) %>%
+  filter(sack == 0 & qb_spike==0 & down != 4) %>%
+  summarize(avgepa=mean(epa))
+
+ggplot(wilsonpassepadown, aes(x=down, y=avgepa)) + geom_point() + labs(y="Average Epa", x="Down")
+```
+
+## Wide Receivers
+
+Now to look at wide receivers on the Seahawks. The recievers with the most targets were Tyler Lockett and Doug Baldwin. Which were also the first and third highest average epa. Jaron Brown had the least targets for someone that played in all the games this season but the second highest average epa. Tyler Lockett was by far the most effective reciever, with the most targets and averaged 1.2 epa per target. It also appears that the running backs were among the least effective when used as recievers. 
+```{r}
+wilsonwrtargets <- wilson %>% 
+  group_by(receiver_player_name) %>%
+  filter(!is.na(receiver_player_name) & n()>10) 
+
+wilsonwrepa <- wilson %>% 
+  group_by(receiver_player_name) %>%
+  filter(!is.na(receiver_player_name) & n()>10) %>% #filters out sacks
+  summarize(AvgEpa=mean(epa))
+
+ggplot(wilsonwrtargets, aes(x=receiver_player_name))+ geom_bar(aes(fill=pass_location))+ xlab("Wide Receiver Name") + ylab("Number of Targets")
+
+ggplot(wilsonwrepa, aes(x=receiver_player_name, y=AvgEpa))+ geom_point() + labs(y="Average Epa", x="Wide Receiver Name")
+```
+
+## Wide Receivers and Time
+
+For these plots  I filtered to include only receivers with at least 30 targets to make the visual more clear and accurate. We see that most recievers did not have much of a change to there depth of target except for tyler Lockett and Nick Vannett. Tyler Lockett's depth of target rose steadily as the games got closer to ending. While Nick Vannett's depth of target dropped as the game got closer to ending. Looking at epa, Lockett again proves to be the most effective as the game gets on. Also intereasting that David Moore epa increased heavily as the game went on despite starting in negative epa. 
+```{r}
+wilsonhighertarget <- wilson %>% 
+  group_by(receiver_player_name) %>%
+  filter(!is.na(receiver_player_name) & n()>30)
+
+ggplot(wilsonhighertarget, aes(x=game_seconds_remaining, y=air_yards, col=receiver_player_name)) +
+  geom_point() + 
+  geom_smooth(method=lm, aes(fill=receiver_player_name), se=F)
+
+ggplot(wilsonhighertarget, aes(x=game_seconds_remaining, y=epa, col=receiver_player_name)) + geom_point() + geom_smooth(method=lm, aes(fill=receiver_player_name), se=F)+scale_y_continuous(limits = c(-2, 2))
+```
+
+## Model
+
+Here I took most of the variables I've been investigating and put them in a linear regression model to see their significance. For the data set I removed na values in pass location and receiver player name to allow me to bind it with the prediction later because the lm function automatically removed those variable when making the model. 
+
+It appears that receiver player name, pass location, and game time were not that significant in determining epa. However yard line position, air yards, and completed pass were very significant. Only third down was significant in determining epa.
+
+```{r}
+wilsontest <- wilson %>%
+  filter(!is.na(pass_location) & !is.na(receiver_player_name))
+mod2 <-lm(epa~game_seconds_remaining+yardline_100+air_yards+receiver_player_name+pass_location+complete_pass+down, data=wilson)
+summary(mod2)
+
+pred <-predict(mod2)
+modelresult <- cbind(wilsontest, pred)
+modelresult <- modelresult %>%
+  mutate(res = epa - pred) %>%
+  select(epa, pred, res)
+
+head(modelresult)
+```
+
+## Summary
+
+The best conditions for Wilson to pass are to be at the end of the game, on third down, targeting the middle of the field, with a depth of target of at least 30 yards.
+
+Tyler Lockett was clearly the most effective wide receiver for the season, with Doug Baldwin being the second best. While Jaron Brown had the second highest average epa, he had very few targets which makes his case for second best not as strong as Baldwin’s as Baldwin had a much higher number of targets. 
+
+I think I was able to accomplish a good investigation of the passing game during the 2018 season using a variety of graphing and data manipulation skills. I was able to look at a variety of focused areas that make up the passing game and find the best conditions of each. I would like to investigate more in yard line position, completion percentages, and air yards because they were what I discovered to be the most significant variables. 
